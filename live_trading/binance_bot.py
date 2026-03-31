@@ -218,6 +218,22 @@ class BinanceFuturesBot:
             # Determine side for closing
             side = 'sell' if position_size > 0 else 'buy'
             amount = abs(position_size)
+
+            # Never submit dust/zero close orders.
+            market = self.exchange.market(self.symbol)
+            min_amount = (market.get('limits', {})
+                                .get('amount', {})
+                                .get('min') or 0.0)
+            if amount <= 0:
+                print("ℹ️  Close skipped: position size is zero")
+                self.current_position = 0
+                return True
+            if min_amount and amount < min_amount:
+                print(
+                    f"ℹ️  Close skipped: amount {amount} is below min amount {min_amount}"
+                )
+                self.current_position = 0
+                return True
             
             print(f"🔄 Closing position: {side} {amount} {self.symbol}")
             
@@ -266,13 +282,38 @@ class BinanceFuturesBot:
             
             # Calculate position size (1% of balance)
             position_value = balance * self.position_size
+            if position_value <= 0:
+                print(
+                    f"ℹ️  Order skipped: position value is {position_value:.2f} USDT"
+                )
+                return
+
+            if current_price <= 0:
+                print("ℹ️  Order skipped: invalid current price")
+                return
+
             amount = position_value / current_price
-            
-            # Round to exchange precision (usually 3 decimals for BTC)
-            amount = round(amount, 3)
+
+            # Use exchange precision for the active market symbol.
+            amount = float(self.exchange.amount_to_precision(self.symbol, amount))
+
+            market = self.exchange.market(self.symbol)
+            min_amount = (market.get('limits', {})
+                                .get('amount', {})
+                                .get('min') or 0.0)
             
             print(f"📊 Position value: {position_value:.2f} USDT")
             print(f"📦 Amount: {amount} BTC")
+
+            if amount <= 0:
+                print("ℹ️  Order skipped: computed amount is zero after precision rounding")
+                return
+
+            if min_amount and amount < min_amount:
+                print(
+                    f"ℹ️  Order skipped: computed amount {amount} is below min amount {min_amount}"
+                )
+                return
             
             # Close existing position first if we have one
             if self.current_position != 0:
