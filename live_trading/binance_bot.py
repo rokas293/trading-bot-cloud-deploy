@@ -50,6 +50,10 @@ class BybitFuturesBot:
         # Runtime configuration from env (Railway-friendly defaults)
         self.testnet = os.getenv('TESTNET', 'true').strip().lower() == 'true'
         self.bybit_demo_mode = os.getenv('BYBIT_DEMO_MODE', 'false').strip().lower() == 'true'
+        if self.testnet and self.bybit_demo_mode:
+            # Bybit demo mode uses api-demo and should not be combined with sandbox mode.
+            print("⚠️  TESTNET=true and BYBIT_DEMO_MODE=true are incompatible. Forcing TESTNET=false.")
+            self.testnet = False
 
         raw_symbol = os.getenv('SYMBOL', 'BTCUSDT').strip().upper()
         if '/' in raw_symbol:
@@ -79,6 +83,7 @@ class BybitFuturesBot:
             'options': {
                 'defaultType': 'linear',
                 'adjustForTimeDifference': True,
+                'recvWindow': 10000,
             }
         })
         # Bybit mode selection:
@@ -86,6 +91,8 @@ class BybitFuturesBot:
         # - BYBIT_DEMO_MODE=true => mainnet base URL with demo-trading keys
         if self.testnet and not self.bybit_demo_mode:
             self.exchange.set_sandbox_mode(True)
+        elif self.bybit_demo_mode:
+            self.exchange.enable_demo_trading(True)
 
         # Public client for market data only (no keys) so data fetches still
         # work when credentials are invalid or permissions are missing.
@@ -97,6 +104,8 @@ class BybitFuturesBot:
         })
         if self.testnet and not self.bybit_demo_mode:
             self.public_exchange.set_sandbox_mode(True)
+        elif self.bybit_demo_mode:
+            self.public_exchange.enable_demo_trading(True)
 
         if self.bybit_demo_mode:
             print("Connected to Bybit demo trading mode ✓")
@@ -575,22 +584,26 @@ def main():
     
     # Get API credentials from environment
     api_key = (
-        os.getenv('BYBIT_TESTNET_KEY')
+        os.getenv('BYBIT_DEMO_KEY')
+        or os.getenv('BYBIT_TESTNET_KEY')
         or os.getenv('BYBIT_API_KEY')
-        or os.getenv('BINANCE_TESTNET_API_KEY')
-        or os.getenv('BINANCE_TESTNET_KEY')
     )
     api_secret = (
-        os.getenv('BYBIT_TESTNET_SECRET')
+        os.getenv('BYBIT_DEMO_SECRET')
+        or os.getenv('BYBIT_TESTNET_SECRET')
         or os.getenv('BYBIT_API_SECRET')
-        or os.getenv('BINANCE_TESTNET_SECRET')
-        or os.getenv('BINANCE_TESTNET_API_SECRET')
     )
+
+    # Avoid hidden newline/space issues from copied secrets.
+    if isinstance(api_key, str):
+        api_key = api_key.strip()
+    if isinstance(api_secret, str):
+        api_secret = api_secret.strip()
     
     # Validate credentials
     if not api_key or not api_secret:
         print("❌ Error: API credentials not found!")
-        print("Set BYBIT_TESTNET_KEY and BYBIT_TESTNET_SECRET as environment variables")
+        print("Set BYBIT_DEMO_KEY/BYBIT_DEMO_SECRET or BYBIT_TESTNET_KEY/BYBIT_TESTNET_SECRET")
         return
     
     # Create and run bot
