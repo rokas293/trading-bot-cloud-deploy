@@ -386,8 +386,11 @@ class BinanceFuturesBot:
                     print(f"ℹ️  No change in signal (current position: {signal_text.get(self.current_position, 'UNKNOWN')})")
                 
                 # Wait before next check
+                next_check = time.time() + check_interval
                 print(f"\n⏳ Waiting {check_interval} seconds until next check...")
+                print(f"🫀 Heartbeat: sleeping now, next wake at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(next_check))}")
                 time.sleep(check_interval)
+                print(f"🫀 Heartbeat: woke up at {time.strftime('%Y-%m-%d %H:%M:%S')}, starting next cycle")
                 
         except KeyboardInterrupt:
             print("\n\n🛑 Bot stopped by user")

@@ -1,1 +1,1 @@
-worker: python live_trading/binance_bot.py
+worker: python -u live_trading/binance_bot.py
