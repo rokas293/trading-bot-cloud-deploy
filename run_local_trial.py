@@ -153,7 +153,7 @@ class DualLogger:
 
 class TrialBotWrapper:
     """
-    Wrapper for BinanceFuturesBot with trial mode and enhanced logging.
+    Wrapper for exchange bot with trial mode and enhanced logging.
     
     Features:
     - Intercepts and logs all actions
@@ -183,11 +183,21 @@ class TrialBotWrapper:
         load_dotenv()
         
         # Get API credentials
-        api_key = os.getenv('BINANCE_TESTNET_KEY') or os.getenv('BINANCE_TESTNET_API_KEY')
-        api_secret = os.getenv('BINANCE_TESTNET_SECRET') or os.getenv('BINANCE_TESTNET_API_SECRET')
+        api_key = (
+            os.getenv('BYBIT_TESTNET_KEY')
+            or os.getenv('BYBIT_API_KEY')
+            or os.getenv('BINANCE_TESTNET_KEY')
+            or os.getenv('BINANCE_TESTNET_API_KEY')
+        )
+        api_secret = (
+            os.getenv('BYBIT_TESTNET_SECRET')
+            or os.getenv('BYBIT_API_SECRET')
+            or os.getenv('BINANCE_TESTNET_SECRET')
+            or os.getenv('BINANCE_TESTNET_API_SECRET')
+        )
         
         if not api_key or not api_secret:
-            self.logger.error("API credentials not found. Set BINANCE_TESTNET_KEY and BINANCE_TESTNET_SECRET as environment variables (or in .env for local dev)")
+            self.logger.error("API credentials not found. Set BYBIT_TESTNET_KEY and BYBIT_TESTNET_SECRET as environment variables (or in .env for local dev)")
             return False
         
         try:

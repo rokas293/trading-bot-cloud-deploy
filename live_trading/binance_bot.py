@@ -1,7 +1,7 @@
 """
-Binance Futures Testnet Trading Bot
+Bybit Linear Futures Testnet Trading Bot
 
-This bot connects to Binance Futures testnet, fetches live BTC/USDT data,
+This bot connects to Bybit testnet, fetches live BTC/USDT data,
 runs the SuperTrend strategy, and executes trades automatically.
 
 TESTNET ONLY - No real money at risk!
@@ -22,12 +22,12 @@ sys.path.insert(0, str(project_root))
 from strategies.SuperTrend_Strategy import strategy_supertrend
 
 
-class BinanceFuturesBot:
+class BybitFuturesBot:
     """
-    Simple automated trading bot for Binance Futures testnet.
+    Simple automated trading bot for Bybit linear futures testnet.
     
     Features:
-    - Connects to Binance Futures testnet (paper trading)
+    - Connects to Bybit testnet (paper trading)
     - Fetches live 1-hour BTC/USDT OHLCV data
     - Runs SuperTrend strategy
     - Executes trades based on signals
@@ -39,11 +39,11 @@ class BinanceFuturesBot:
         Initialize the bot with API credentials.
         
         Args:
-            api_key: Binance testnet API key
-            api_secret: Binance testnet API secret
+            api_key: Bybit testnet API key
+            api_secret: Bybit testnet API secret
         """
         print("=" * 70)
-        print("🤖 BINANCE FUTURES TESTNET BOT")
+        print("🤖 BYBIT LINEAR FUTURES TESTNET BOT")
         print("=" * 70)
         
         # Runtime configuration from env (Railway-friendly defaults)
@@ -51,56 +51,47 @@ class BinanceFuturesBot:
 
         raw_symbol = os.getenv('SYMBOL', 'BTCUSDT').strip().upper()
         if '/' in raw_symbol:
-            self.symbol = raw_symbol
+            # If no settle suffix provided, default to USDT-settled linear perp.
+            self.symbol = raw_symbol if ':' in raw_symbol else f"{raw_symbol}:USDT"
         elif len(raw_symbol) >= 6 and raw_symbol.endswith('USDT'):
-            self.symbol = f"{raw_symbol[:-4]}/USDT"
+            self.symbol = f"{raw_symbol[:-4]}/USDT:USDT"
         else:
-            self.symbol = 'BTC/USDT'
+            self.symbol = 'BTC/USDT:USDT'
 
         try:
             self.position_size = float(os.getenv('RISK_PER_TRADE', '0.01'))
         except ValueError:
             self.position_size = 0.01
 
-        # Initialize CCXT exchange object for Binance Futures.
-        # Note: CCXT sandbox mode is deprecated for Binance futures, so we
-        # route testnet traffic via explicit futures demo endpoints instead.
-        self.exchange = ccxt.binance({
+        # Initialize CCXT exchange object for Bybit linear futures.
+        self.exchange = ccxt.bybit({
             'apiKey': api_key,
             'secret': api_secret,
             'enableRateLimit': True,  # Respect API rate limits
             'options': {
-                'defaultType': 'future',  # Use futures market
+                'defaultType': 'linear',
+                'adjustForTimeDifference': True,
             }
         })
-
-        # Binance futures demo endpoints (USDT-M futures testnet).
         if self.testnet:
-            self.exchange.urls['api']['fapiPublic'] = 'https://testnet.binancefuture.com/fapi/v1'
-            self.exchange.urls['api']['fapiPublicV2'] = 'https://testnet.binancefuture.com/fapi/v2'
-            self.exchange.urls['api']['fapiPublicV3'] = 'https://testnet.binancefuture.com/fapi/v3'
-            self.exchange.urls['api']['fapiPrivate'] = 'https://testnet.binancefuture.com/fapi/v1'
-            self.exchange.urls['api']['fapiPrivateV2'] = 'https://testnet.binancefuture.com/fapi/v2'
-            self.exchange.urls['api']['fapiPrivateV3'] = 'https://testnet.binancefuture.com/fapi/v3'
+            self.exchange.set_sandbox_mode(True)
 
         # Public client for market data only (no keys) so data fetches still
         # work when credentials are invalid or permissions are missing.
-        self.public_exchange = ccxt.binance({
+        self.public_exchange = ccxt.bybit({
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'future',
+                'defaultType': 'linear',
             }
         })
         if self.testnet:
-            self.public_exchange.urls['api']['fapiPublic'] = 'https://testnet.binancefuture.com/fapi/v1'
-            self.public_exchange.urls['api']['fapiPublicV2'] = 'https://testnet.binancefuture.com/fapi/v2'
-            self.public_exchange.urls['api']['fapiPublicV3'] = 'https://testnet.binancefuture.com/fapi/v3'
+            self.public_exchange.set_sandbox_mode(True)
 
         if self.testnet:
-            print("Connected to Binance testnet ✓")
-            print("📡 Using Binance Futures demo endpoints (no sandbox mode)")
+            print("Connected to Bybit testnet ✓")
+            print("📡 Using Bybit linear futures sandbox mode")
         else:
-            print("⚠️  TESTNET=false: using Binance live environment")
+            print("⚠️  TESTNET=false: using Bybit live environment")
         
         # =====================================================================
         # ⚙️ TRADING CONFIGURATION - EASY TO CHANGE!
@@ -153,7 +144,7 @@ class BinanceFuturesBot:
     
     def fetch_ohlcv_data(self):
         """
-        Fetch recent OHLCV (candlestick) data from Binance.
+        Fetch recent OHLCV (candlestick) data from Bybit.
         
         Returns:
             pd.DataFrame with columns: Timestamp, Open, High, Low, Close, Volume
@@ -202,8 +193,8 @@ class BinanceFuturesBot:
             float: Available USDT balance
         """
         try:
-            balance = self.exchange.fetch_balance()
-            usdt_balance = balance['USDT']['free']
+            balance = self.exchange.fetch_balance({'type': 'linear'})
+            usdt_balance = balance.get('USDT', {}).get('free', 0)
             return usdt_balance
         except Exception as e:
             print(f"❌ Error fetching balance: {e}")
@@ -211,16 +202,16 @@ class BinanceFuturesBot:
     
     def get_current_position(self):
         """
-        Check if we have an open position in BTC/USDT.
+        Check if we have an open position in the configured symbol.
         
         Returns:
             float: Position size (positive = long, negative = short, 0 = flat)
         """
         try:
-            positions = self.exchange.fetch_positions([self.symbol])
+            positions = self.exchange.fetch_positions([self.symbol], params={'category': 'linear'})
             for pos in positions:
                 if pos['symbol'] == self.symbol:
-                    contracts = float(pos['contracts'])
+                    contracts = float(pos.get('contracts') or 0)
                     return contracts
             return 0
         except Exception as e:
@@ -261,7 +252,8 @@ class BinanceFuturesBot:
             order = self.exchange.create_market_order(
                 self.symbol,
                 side,
-                amount
+                amount,
+                params={'reduceOnly': True, 'category': 'linear'}
             )
             
             print(f"✅ Position closed: {order['id']}")
@@ -351,7 +343,8 @@ class BinanceFuturesBot:
             order = self.exchange.create_market_order(
                 self.symbol,
                 side,
-                amount
+                amount,
+                params={'category': 'linear'}
             )
             
             print(f"✅ Order executed!")
@@ -481,18 +474,32 @@ def main():
     load_dotenv()
     
     # Get API credentials from environment
-    api_key = os.getenv('BINANCE_TESTNET_API_KEY') or os.getenv('BINANCE_TESTNET_KEY')
-    api_secret = os.getenv('BINANCE_TESTNET_SECRET') or os.getenv('BINANCE_TESTNET_API_SECRET')
+    api_key = (
+        os.getenv('BYBIT_TESTNET_KEY')
+        or os.getenv('BYBIT_API_KEY')
+        or os.getenv('BINANCE_TESTNET_API_KEY')
+        or os.getenv('BINANCE_TESTNET_KEY')
+    )
+    api_secret = (
+        os.getenv('BYBIT_TESTNET_SECRET')
+        or os.getenv('BYBIT_API_SECRET')
+        or os.getenv('BINANCE_TESTNET_SECRET')
+        or os.getenv('BINANCE_TESTNET_API_SECRET')
+    )
     
     # Validate credentials
     if not api_key or not api_secret:
         print("❌ Error: API credentials not found!")
-        print("Set BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_SECRET as environment variables")
+        print("Set BYBIT_TESTNET_KEY and BYBIT_TESTNET_SECRET as environment variables")
         return
     
     # Create and run bot
-    bot = BinanceFuturesBot(api_key, api_secret)
+    bot = BybitFuturesBot(api_key, api_secret)
     bot.run()  # Uses configured check_interval (5m=300s or 1h=60s)
+
+
+# Backward-compatible alias to avoid breaking existing imports.
+BinanceFuturesBot = BybitFuturesBot
 
 
 if __name__ == '__main__':
