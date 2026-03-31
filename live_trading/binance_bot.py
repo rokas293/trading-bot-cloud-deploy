@@ -49,6 +49,7 @@ class BybitFuturesBot:
         
         # Runtime configuration from env (Railway-friendly defaults)
         self.testnet = os.getenv('TESTNET', 'true').strip().lower() == 'true'
+        self.bybit_demo_mode = os.getenv('BYBIT_DEMO_MODE', 'false').strip().lower() == 'true'
 
         raw_symbol = os.getenv('SYMBOL', 'BTCUSDT').strip().upper()
         if '/' in raw_symbol:
@@ -64,6 +65,9 @@ class BybitFuturesBot:
         except ValueError:
             self.position_size = 0.01
 
+        self.bybit_account_type = os.getenv('BYBIT_ACCOUNT_TYPE', 'UNIFIED').strip().upper()
+        self.balance_debug = os.getenv('BALANCE_DEBUG', 'false').strip().lower() == 'true'
+
         # Price source for data/ticker on Bybit: index is the most stable on testnet.
         self.price_source = os.getenv('PRICE_SOURCE', 'index').strip().lower()
 
@@ -77,7 +81,10 @@ class BybitFuturesBot:
                 'adjustForTimeDifference': True,
             }
         })
-        if self.testnet:
+        # Bybit mode selection:
+        # - TESTNET=true  => testnet.bybit.com (sandbox)
+        # - BYBIT_DEMO_MODE=true => mainnet base URL with demo-trading keys
+        if self.testnet and not self.bybit_demo_mode:
             self.exchange.set_sandbox_mode(True)
 
         # Public client for market data only (no keys) so data fetches still
@@ -88,10 +95,13 @@ class BybitFuturesBot:
                 'defaultType': 'linear',
             }
         })
-        if self.testnet:
+        if self.testnet and not self.bybit_demo_mode:
             self.public_exchange.set_sandbox_mode(True)
 
-        if self.testnet:
+        if self.bybit_demo_mode:
+            print("Connected to Bybit demo trading mode ✓")
+            print("📡 Using Bybit mainnet URL with demo API keys")
+        elif self.testnet:
             print("Connected to Bybit testnet ✓")
             print("📡 Using Bybit linear futures sandbox mode")
         else:
@@ -142,6 +152,8 @@ class BybitFuturesBot:
         print(f"📊 Symbol: {self.symbol}")
         print(f"⏰ Timeframe: {self.timeframe}")
         print(f"🧮 Price source: {self.price_source}")
+        print(f"🏦 Bybit account type: {self.bybit_account_type}")
+        print(f"🎛️  Bybit demo mode: {self.bybit_demo_mode}")
         print(f"� Strategy: SuperTrend (period={self.strategy_params['atr_period']}, mult={self.strategy_params['atr_multiplier']})")
         print(f"⏱️  Check interval: {self.check_interval} seconds")
         print(f"�💰 Position size: {self.position_size * 100}% of balance")
@@ -159,6 +171,12 @@ class BybitFuturesBot:
 
     def _extract_usdt_balance(self, balance: Dict[str, Any]) -> float:
         """Extract free/available USDT from multiple Bybit response shapes."""
+        free_map = balance.get('free') if isinstance(balance, dict) else None
+        if isinstance(free_map, dict):
+            v = self._safe_float(free_map.get('USDT'))
+            if v is not None:
+                return max(v, 0.0)
+
         usdt = balance.get('USDT') if isinstance(balance, dict) else None
         if isinstance(usdt, dict):
             for key in ('free', 'available', 'used', 'total'):
@@ -256,11 +274,13 @@ class BybitFuturesBot:
         Returns:
             float: Available USDT balance
         """
+        preferred = {'accountType': self.bybit_account_type, 'coin': 'USDT'} if self.bybit_account_type else {'coin': 'USDT'}
         param_attempts = [
-            {'type': 'swap'},
-            {'accountType': 'UNIFIED'},
-            {'accountType': 'CONTRACT'},
-            {'type': 'linear'},
+            preferred,
+            {'accountType': 'UNIFIED', 'coin': 'USDT'},
+            {'accountType': 'CONTRACT', 'coin': 'USDT'},
+            {'type': 'swap', 'coin': 'USDT'},
+            {'type': 'linear', 'coin': 'USDT'},
             {},
         ]
 
@@ -269,9 +289,13 @@ class BybitFuturesBot:
             try:
                 balance = self.exchange.fetch_balance(params)
                 usdt_balance = self._extract_usdt_balance(balance)
+                if self.balance_debug:
+                    print(f"🧪 Balance attempt {params}: USDT free={usdt_balance}")
                 return usdt_balance
             except Exception as e:
                 last_error = e
+                if self.balance_debug:
+                    print(f"🧪 Balance attempt failed {params}: {e}")
 
         if last_error is not None:
             print(f"❌ Error fetching balance: {last_error}")
