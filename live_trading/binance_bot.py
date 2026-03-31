@@ -406,6 +406,10 @@ class BinanceFuturesBot:
                 
                 print(f"✅ Fetched {len(df)} bars")
                 print(f"   Latest close: ${df['Close'].iloc[-1]:.2f}")
+
+                # Always print account snapshot each cycle for monitoring.
+                cycle_balance = self.get_balance()
+                print(f"💰 Balance snapshot: {cycle_balance:.2f} USDT (free)")
                 
                 # Step 2: Run strategy
                 print("\n🧠 Running SuperTrend strategy...")
