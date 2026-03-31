@@ -83,6 +83,19 @@ class BinanceFuturesBot:
             self.exchange.urls['api']['fapiPrivateV2'] = 'https://testnet.binancefuture.com/fapi/v2'
             self.exchange.urls['api']['fapiPrivateV3'] = 'https://testnet.binancefuture.com/fapi/v3'
 
+        # Public client for market data only (no keys) so data fetches still
+        # work when credentials are invalid or permissions are missing.
+        self.public_exchange = ccxt.binance({
+            'enableRateLimit': True,
+            'options': {
+                'defaultType': 'future',
+            }
+        })
+        if self.testnet:
+            self.public_exchange.urls['api']['fapiPublic'] = 'https://testnet.binancefuture.com/fapi/v1'
+            self.public_exchange.urls['api']['fapiPublicV2'] = 'https://testnet.binancefuture.com/fapi/v2'
+            self.public_exchange.urls['api']['fapiPublicV3'] = 'https://testnet.binancefuture.com/fapi/v3'
+
         if self.testnet:
             print("Connected to Binance testnet ✓")
             print("📡 Using Binance Futures demo endpoints (no sandbox mode)")
@@ -152,7 +165,7 @@ class BinanceFuturesBot:
         for attempt in range(1, max_attempts + 1):
             try:
                 # Fetch OHLCV data from exchange
-                ohlcv = self.exchange.fetch_ohlcv(
+                ohlcv = self.public_exchange.fetch_ohlcv(
                     self.symbol,
                     self.timeframe,
                     limit=self.bars_to_fetch
