@@ -11,6 +11,7 @@ import ccxt
 import pandas as pd
 import time
 import sys
+from typing import Any, Dict, Optional
 from pathlib import Path
 from dotenv import load_dotenv
 import os
@@ -62,6 +63,9 @@ class BybitFuturesBot:
             self.position_size = float(os.getenv('RISK_PER_TRADE', '0.01'))
         except ValueError:
             self.position_size = 0.01
+
+        # Price source for data/ticker on Bybit: index is the most stable on testnet.
+        self.price_source = os.getenv('PRICE_SOURCE', 'index').strip().lower()
 
         # Initialize CCXT exchange object for Bybit linear futures.
         self.exchange = ccxt.bybit({
@@ -137,10 +141,66 @@ class BybitFuturesBot:
         
         print(f"📊 Symbol: {self.symbol}")
         print(f"⏰ Timeframe: {self.timeframe}")
+        print(f"🧮 Price source: {self.price_source}")
         print(f"� Strategy: SuperTrend (period={self.strategy_params['atr_period']}, mult={self.strategy_params['atr_multiplier']})")
         print(f"⏱️  Check interval: {self.check_interval} seconds")
         print(f"�💰 Position size: {self.position_size * 100}% of balance")
         print()
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        """Convert value to float safely, returning None on failure."""
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _extract_usdt_balance(self, balance: Dict[str, Any]) -> float:
+        """Extract free/available USDT from multiple Bybit response shapes."""
+        usdt = balance.get('USDT') if isinstance(balance, dict) else None
+        if isinstance(usdt, dict):
+            for key in ('free', 'available', 'used', 'total'):
+                v = self._safe_float(usdt.get(key))
+                if v is not None and (key in ('free', 'available', 'total')):
+                    return max(v, 0.0)
+
+        info = balance.get('info') if isinstance(balance, dict) else None
+        result = info.get('result') if isinstance(info, dict) else None
+        lists = result.get('list') if isinstance(result, dict) else None
+
+        if isinstance(lists, list):
+            for acct in lists:
+                coins = acct.get('coin') if isinstance(acct, dict) else None
+                if not isinstance(coins, list):
+                    continue
+                for coin in coins:
+                    if str(coin.get('coin', '')).upper() != 'USDT':
+                        continue
+                    for key in ('availableToWithdraw', 'availableBalance', 'walletBalance', 'equity'):
+                        v = self._safe_float(coin.get(key))
+                        if v is not None:
+                            return max(v, 0.0)
+
+        return 0.0
+
+    def _fetch_current_price(self) -> float:
+        """Fetch current reference price using configured source."""
+        ticker = self.public_exchange.fetch_ticker(self.symbol, params={'category': 'linear'})
+        info = ticker.get('info', {}) if isinstance(ticker, dict) else {}
+
+        if self.price_source == 'index':
+            p = self._safe_float(info.get('indexPrice'))
+            if p is not None and p > 0:
+                return p
+        elif self.price_source == 'mark':
+            p = self._safe_float(info.get('markPrice'))
+            if p is not None and p > 0:
+                return p
+
+        p = self._safe_float(ticker.get('last'))
+        return p if p is not None else 0.0
     
     def fetch_ohlcv_data(self):
         """
@@ -159,7 +219,11 @@ class BybitFuturesBot:
                 ohlcv = self.public_exchange.fetch_ohlcv(
                     self.symbol,
                     self.timeframe,
-                    limit=self.bars_to_fetch
+                    limit=self.bars_to_fetch,
+                    params={
+                        'category': 'linear',
+                        'price': self.price_source,
+                    }
                 )
 
                 # Convert to DataFrame with proper column names
@@ -192,13 +256,26 @@ class BybitFuturesBot:
         Returns:
             float: Available USDT balance
         """
-        try:
-            balance = self.exchange.fetch_balance({'type': 'linear'})
-            usdt_balance = balance.get('USDT', {}).get('free', 0)
-            return usdt_balance
-        except Exception as e:
-            print(f"❌ Error fetching balance: {e}")
-            return 0
+        param_attempts = [
+            {'type': 'swap'},
+            {'accountType': 'UNIFIED'},
+            {'accountType': 'CONTRACT'},
+            {'type': 'linear'},
+            {},
+        ]
+
+        last_error = None
+        for params in param_attempts:
+            try:
+                balance = self.exchange.fetch_balance(params)
+                usdt_balance = self._extract_usdt_balance(balance)
+                return usdt_balance
+            except Exception as e:
+                last_error = e
+
+        if last_error is not None:
+            print(f"❌ Error fetching balance: {last_error}")
+        return 0.0
     
     def get_current_position(self):
         """
@@ -289,8 +366,7 @@ class BybitFuturesBot:
             print(f"💰 Current balance: {balance:.2f} USDT")
             
             # Get current BTC price
-            ticker = self.exchange.fetch_ticker(self.symbol)
-            current_price = ticker['last']
+            current_price = self._fetch_current_price()
             print(f"💵 Current BTC price: ${current_price:.2f}")
             
             # Calculate position size (1% of balance)
