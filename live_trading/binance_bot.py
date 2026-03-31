@@ -62,22 +62,30 @@ class BinanceFuturesBot:
         except ValueError:
             self.position_size = 0.01
 
-        # Initialize CCXT exchange object for Binance Futures
+        # Initialize CCXT exchange object for Binance Futures.
+        # Note: CCXT sandbox mode is deprecated for Binance futures, so we
+        # route testnet traffic via explicit futures demo endpoints instead.
         self.exchange = ccxt.binance({
             'apiKey': api_key,
             'secret': api_secret,
             'enableRateLimit': True,  # Respect API rate limits
             'options': {
                 'defaultType': 'future',  # Use futures market
-                'testnet': self.testnet,  # Use testnet (paper trading)
             }
         })
-        
-        # Set testnet/sandbox mode (use CCXT defaults for futures testnet)
-        self.exchange.set_sandbox_mode(self.testnet)
+
+        # Binance futures demo endpoints (USDT-M futures testnet).
+        if self.testnet:
+            self.exchange.urls['api']['fapiPublic'] = 'https://testnet.binancefuture.com/fapi/v1'
+            self.exchange.urls['api']['fapiPublicV2'] = 'https://testnet.binancefuture.com/fapi/v2'
+            self.exchange.urls['api']['fapiPublicV3'] = 'https://testnet.binancefuture.com/fapi/v3'
+            self.exchange.urls['api']['fapiPrivate'] = 'https://testnet.binancefuture.com/fapi/v1'
+            self.exchange.urls['api']['fapiPrivateV2'] = 'https://testnet.binancefuture.com/fapi/v2'
+            self.exchange.urls['api']['fapiPrivateV3'] = 'https://testnet.binancefuture.com/fapi/v3'
+
         if self.testnet:
             print("Connected to Binance testnet ✓")
-            print("📡 Using CCXT sandbox/testnet URLs (defaults)")
+            print("📡 Using Binance Futures demo endpoints (no sandbox mode)")
         else:
             print("⚠️  TESTNET=false: using Binance live environment")
         
