@@ -1,5 +1,5 @@
 """
-Simple Binance Futures Testnet Trading Bot
+Binance Futures Testnet Trading Bot
 
 This bot connects to Binance Futures testnet, fetches live BTC/USDT data,
 runs the SuperTrend strategy, and executes trades automatically.
@@ -46,6 +46,22 @@ class BinanceFuturesBot:
         print("🤖 BINANCE FUTURES TESTNET BOT")
         print("=" * 70)
         
+        # Runtime configuration from env (Railway-friendly defaults)
+        self.testnet = os.getenv('TESTNET', 'true').strip().lower() == 'true'
+
+        raw_symbol = os.getenv('SYMBOL', 'BTCUSDT').strip().upper()
+        if '/' in raw_symbol:
+            self.symbol = raw_symbol
+        elif len(raw_symbol) >= 6 and raw_symbol.endswith('USDT'):
+            self.symbol = f"{raw_symbol[:-4]}/USDT"
+        else:
+            self.symbol = 'BTC/USDT'
+
+        try:
+            self.position_size = float(os.getenv('RISK_PER_TRADE', '0.01'))
+        except ValueError:
+            self.position_size = 0.01
+
         # Initialize CCXT exchange object for Binance Futures
         self.exchange = ccxt.binance({
             'apiKey': api_key,
@@ -53,13 +69,17 @@ class BinanceFuturesBot:
             'enableRateLimit': True,  # Respect API rate limits
             'options': {
                 'defaultType': 'future',  # Use futures market
-                'testnet': True,          # Use testnet (paper trading)
+                'testnet': self.testnet,  # Use testnet (paper trading)
             }
         })
         
         # Set testnet/sandbox mode (use CCXT defaults for futures testnet)
-        self.exchange.set_sandbox_mode(True)
-        print("📡 Using CCXT sandbox/testnet URLs (defaults)")
+        self.exchange.set_sandbox_mode(self.testnet)
+        if self.testnet:
+            print("Connected to Binance testnet ✓")
+            print("📡 Using CCXT sandbox/testnet URLs (defaults)")
+        else:
+            print("⚠️  TESTNET=false: using Binance live environment")
         
         # =====================================================================
         # ⚙️ TRADING CONFIGURATION - EASY TO CHANGE!
@@ -71,8 +91,6 @@ class BinanceFuturesBot:
         self.timeframe = '5m'  # ← CHANGE THIS: '5m' or '1h'
         
         # Trading parameters
-        self.symbol = 'BTC/USDT'
-        self.position_size = 0.01  # Use 1% of balance per trade
         self.bars_to_fetch = 100   # Fetch last 100 bars for strategy
         
         # Strategy parameters - OPTIMIZED FOR EACH TIMEFRAME
@@ -105,7 +123,6 @@ class BinanceFuturesBot:
         # Track current position
         self.current_position = 0  # 0 = flat, 1 = long, -1 = short
         
-        print(f"✅ Connected to Binance Futures Testnet")
         print(f"📊 Symbol: {self.symbol}")
         print(f"⏰ Timeframe: {self.timeframe}")
         print(f"� Strategy: SuperTrend (period={self.strategy_params['atr_period']}, mult={self.strategy_params['atr_multiplier']})")
@@ -325,6 +342,7 @@ class BinanceFuturesBot:
         if check_interval is None:
             check_interval = self.check_interval
         print("🚀 Starting bot...")
+        print("SuperTrend monitoring live...")
         print(f"⏰ Checking for signals every {check_interval} seconds")
         print("Press Ctrl+C to stop")
         print("=" * 70)
@@ -358,6 +376,11 @@ class BinanceFuturesBot:
                 # Step 3: Execute trade if signal changed
                 if signal != self.current_position:
                     print(f"\n🎯 New signal detected! Current: {self.current_position} → New: {signal}")
+                    latest_price = float(df['Close'].iloc[-1])
+                    if signal == 1:
+                        print(f"LONG signal detected @ ${latest_price:,.0f}")
+                    elif signal == -1:
+                        print(f"SHORT signal detected @ ${latest_price:,.0f}")
                     self.place_order(signal)
                 else:
                     print(f"ℹ️  No change in signal (current position: {signal_text.get(self.current_position, 'UNKNOWN')})")
@@ -389,13 +412,13 @@ def main():
     load_dotenv()
     
     # Get API credentials from environment
-    api_key = os.getenv('BINANCE_TESTNET_KEY')
-    api_secret = os.getenv('BINANCE_TESTNET_SECRET')
+    api_key = os.getenv('BINANCE_TESTNET_API_KEY') or os.getenv('BINANCE_TESTNET_KEY')
+    api_secret = os.getenv('BINANCE_TESTNET_SECRET') or os.getenv('BINANCE_TESTNET_API_SECRET')
     
     # Validate credentials
     if not api_key or not api_secret:
         print("❌ Error: API credentials not found!")
-        print("Set BINANCE_TESTNET_KEY and BINANCE_TESTNET_SECRET as environment variables (or in .env for local dev)")
+        print("Set BINANCE_TESTNET_API_KEY and BINANCE_TESTNET_SECRET as environment variables")
         return
     
     # Create and run bot

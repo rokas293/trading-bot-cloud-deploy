@@ -1,1 +1,1 @@
-worker: python run_local_trial.py
+worker: python live_trading/binance_bot.py
