@@ -123,7 +123,7 @@ class BybitFuturesBot:
         # Choose your timeframe: '5m' or '1h'
         # 5-minute = faster signals, more trades
         # 1-hour = slower signals, fewer trades
-        self.timeframe = '5m'  # ← CHANGE THIS: '5m' or '1h'
+        self.timeframe = '1h'  # ← CHANGE THIS: '5m' or '1h'
         
         # Trading parameters
         self.bars_to_fetch = 100   # Fetch last 100 bars for strategy
@@ -143,10 +143,10 @@ class BybitFuturesBot:
         
         elif self.timeframe == '1h':
             # 1-HOUR OPTIMIZED PARAMETERS
-            # Already optimized: period=7, multiplier=2.0
+            # Optimized on BTC_1H_OHLCV grid: period=7, multiplier=2.5
             self.strategy_params = {
                 'atr_period': 7,
-                'atr_multiplier': 2.0
+                'atr_multiplier': 2.5
             }
             self.check_interval = 60  # Check every 60 seconds
         
