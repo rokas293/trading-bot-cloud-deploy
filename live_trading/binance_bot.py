@@ -120,38 +120,19 @@ class BybitFuturesBot:
         # ⚙️ TRADING CONFIGURATION - EASY TO CHANGE!
         # =====================================================================
         
-        # Choose your timeframe: '5m' or '1h'
-        # 5-minute = faster signals, more trades
-        # 1-hour = slower signals, fewer trades
-        self.timeframe = '1h'  # ← CHANGE THIS: '5m' or '1h'
+        # This deployment is fixed to 1-hour strategy execution.
+        self.timeframe = '1h'
         
         # Trading parameters
         self.bars_to_fetch = 100   # Fetch last 100 bars for strategy
         
-        # Strategy parameters - OPTIMIZED FOR EACH TIMEFRAME
-        # After optimization, update these values:
-        
-        if self.timeframe == '5m':
-            # 5-MINUTE OPTIMIZED PARAMETERS
-            # Run: python examples/optimize_supertrend_5m.py
-            # Then copy the best parameters here:
-            self.strategy_params = {
-                'atr_period': 10,       # ← Update after optimization
-                'atr_multiplier': 2.0,  # ← Update after optimization
-            }
-            self.check_interval = 300  # Check every 5 minutes (300 seconds)
-        
-        elif self.timeframe == '1h':
-            # 1-HOUR OPTIMIZED PARAMETERS
-            # Optimized on BTC_1H_OHLCV grid: period=7, multiplier=2.5
-            self.strategy_params = {
-                'atr_period': 7,
-                'atr_multiplier': 2.5
-            }
-            self.check_interval = 60  # Check every 60 seconds
-        
-        else:
-            raise ValueError(f"Unsupported timeframe: {self.timeframe}. Use '5m' or '1h'")
+        # 1-HOUR OPTIMIZED PARAMETERS
+        # Optimized on BTC_1H_OHLCV grid: period=7, multiplier=2.5
+        self.strategy_params = {
+            'atr_period': 7,
+            'atr_multiplier': 2.5,
+        }
+        self.check_interval = 60  # Check every 60 seconds
         
         # ====================================================================
         
