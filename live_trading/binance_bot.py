@@ -296,30 +296,40 @@ class BybitFuturesBot:
         Check if we have an open position in the configured symbol.
         
         Returns:
-            float: Position size (positive = long, negative = short, 0 = flat)
+            tuple: (position_size, side) where side is 'Buy', 'Sell', or None if flat
         """
         try:
             positions = self.exchange.fetch_positions([self.symbol], params={'category': 'linear'})
             for pos in positions:
                 if pos['symbol'] == self.symbol:
                     contracts = float(pos.get('contracts') or 0)
-                    return contracts
-            return 0
+                    side = pos.get('side')  # 'Buy', 'Sell', or None
+                    return (contracts, side)
+            return (0, None)
         except Exception as e:
             print(f"❌ Error fetching position: {e}")
-            return 0
+            return (0, None)
     
     def close_position(self):
         """Close any open position."""
         try:
-            position_size = self.get_current_position()
+            position_size, position_side = self.get_current_position()
             
             if position_size == 0:
                 print("ℹ️  No position to close")
                 return True
             
-            # Determine side for closing
-            side = 'sell' if position_size > 0 else 'buy'
+            # Determine close side based on current position direction
+            # Buy position (long) → sell to close
+            # Sell position (short) → buy to close
+            if position_side == 'Buy':
+                close_side = 'sell'
+            elif position_side == 'Sell':
+                close_side = 'buy'
+            else:
+                # Fallback if side info unavailable (shouldn't happen)
+                close_side = 'sell' if position_size > 0 else 'buy'
+            
             amount = abs(position_size)
 
             # Never submit dust/zero close orders.
@@ -338,11 +348,11 @@ class BybitFuturesBot:
                 self.current_position = 0
                 return True
             
-            print(f"🔄 Closing position: {side} {amount} {self.symbol}")
+            print(f"🔄 Closing position: {close_side} {amount} {self.symbol} (current: {position_side})")
             
             order = self.exchange.create_market_order(
                 self.symbol,
-                side,
+                close_side,
                 amount,
                 params={'reduceOnly': True, 'category': 'linear'}
             )
@@ -363,16 +373,21 @@ class BybitFuturesBot:
             signal: 1 = go long, -1 = go short, 0 = close position
         """
         try:
+            # Sync with actual exchange position
+            exchange_pos_size, exchange_pos_side = self.get_current_position()
+            
             # If signal is 0, close any open position
             if signal == 0:
-                if self.current_position != 0:
+                if exchange_pos_size != 0:
                     print("📉 Signal = 0: Closing position")
                     self.close_position()
+                else:
+                    print("ℹ️  No position to close")
                 return
             
-            # Check if we already have the desired position
-            if signal == self.current_position:
-                print(f"ℹ️  Already in desired position ({signal})")
+            # Check if we already have the desired position (sync with exchange state)
+            if exchange_pos_size != 0:
+                print(f"ℹ️  Already have open position: {exchange_pos_size} {exchange_pos_side}")
                 return
             
             # Get current balance
@@ -418,8 +433,8 @@ class BybitFuturesBot:
                 )
                 return
             
-            # Close existing position first if we have one
-            if self.current_position != 0:
+            # Close existing position first if we have one (already checked above)
+            if exchange_pos_size != 0:
                 print("🔄 Closing existing position first...")
                 self.close_position()
                 time.sleep(1)  # Wait a moment
